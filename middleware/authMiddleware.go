@@ -1,34 +1,33 @@
 package middleware
 
 import (
-	"fmt"
+	//"fmt"
 	helper "golang-restaurant-management/helpers"
-	"net/http"
-
-	"github.com/gin-gonic/gin"
+	"github.com/gofiber/fiber/v2"
 )
 
-func Authentication() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		clientToken := c.Request.Header.Get("token")
+func Authentication() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		clientToken := c.Get("token")
 		if clientToken == "" {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("No Authorization header provided")})
-			c.Abort()
-			return
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+				"error": "No Authorization header provided",
+			})
 		}
 
 		claims, err := helper.ValidateToken(clientToken)
 		if err != "" {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err})
-			c.Abort()
-			return
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+				"error": err,
+			})
 		}
 
-		c.Set("email", claims.Email)
-		c.Set("first_name", claims.First_name)
-		c.Set("last_name", claims.Last_name)
-		c.Set("uid", claims.Uid)
+		// Set user data in context locals
+		c.Locals("email", claims.Email)
+		c.Locals("first_name", claims.First_name)
+		c.Locals("last_name", claims.Last_name)
+		c.Locals("uid", claims.Uid)
 
-		c.Next()
+		return c.Next()
 	}
 }

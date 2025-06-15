@@ -2,13 +2,15 @@ package controller
 
 import (
 	"context"
-	"golang-restaurant-management/database"
-	"golang-restaurant-management/models"
+	//"fmt"
 	"log"
 	"net/http"
 	"time"
 
-	"github.com/gin-gonic/gin"
+	"golang-restaurant-management/database"
+	"golang-restaurant-management/models"
+
+	"github.com/gofiber/fiber/v2"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -16,48 +18,41 @@ import (
 )
 
 type OrderItemPack struct {
-	Table_id    *string
-	Order_items []models.OrderItem
+	Table_id    *string             `json:"table_id"`
+	Order_items []models.OrderItem `json:"order_items"`
 }
 
 var orderItemCollection *mongo.Collection = database.OpenCollection(database.Client, "orderItem")
 
-func GetOrderItems() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		var ctx, cancel = context.WithTimeout(context.Background(), 100*time.Second)
+func GetOrderItems(c *fiber.Ctx) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
+	defer cancel()
 
-		result, err := orderItemCollection.Find(context.TODO(), bson.M{})
-
-		defer cancel()
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "error occured while listing ordered items"})
-			return
-		}
-		var allOrderItems []bson.M
-		if err = result.All(ctx, &allOrderItems); err != nil {
-			log.Fatal(err)
-			return
-		}
-		c.JSON(http.StatusOK, allOrderItems)
+	result, err := orderItemCollection.Find(ctx, bson.M{})
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": "error occurred while listing ordered items"})
 	}
+	var allOrderItems []bson.M
+	if err = result.All(ctx, &allOrderItems); err != nil {
+		log.Fatal(err)
+		return err
+	}
+	return c.JSON(allOrderItems)
 }
 
-func GetOrderItemsByOrder() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		orderId := c.Param("order_id")
+func GetOrderItemsByOrder(c *fiber.Ctx) error {
+	orderId := c.Params("order_id")
 
-		allOrderItems, err := ItemsByOrder(orderId)
-
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "error occured while listing order items by order ID"})
-			return
-		}
-		c.JSON(http.StatusOK, allOrderItems)
+	allOrderItems, err := ItemsByOrder(orderId)
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": "error occurred while listing order items by order ID"})
 	}
+	return c.JSON(allOrderItems)
 }
 
 func ItemsByOrder(id string) (OrderItems []primitive.M, err error) {
-	var ctx, cancel = context.WithTimeout(context.Background(), 100*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
+	defer cancel()
 
 	matchStage := bson.D{{"$match", bson.D{{"order_id", id}}}}
 	lookupStage := bson.D{{"$lookup", bson.D{{"from", "food"}, {"localField", "food_id"}, {"foreignField", "food_id"}, {"as", "food"}}}}
@@ -69,31 +64,28 @@ func ItemsByOrder(id string) (OrderItems []primitive.M, err error) {
 	lookupTableStage := bson.D{{"$lookup", bson.D{{"from", "table"}, {"localField", "order.table_id"}, {"foreignField", "table_id"}, {"as", "table"}}}}
 	unwindTableStage := bson.D{{"$unwind", bson.D{{"path", "$table"}, {"preserveNullAndEmptyArrays", true}}}}
 
-	projectStage := bson.D{
-		{"$project", bson.D{
-			{"id", 0},
-			{"amount", "$food.price"},
-			{"total_count", 1},
-			{"food_name", "$food.name"},
-			{"food_image", "$food.food_image"},
-			{"table_number", "$table.table_number"},
-			{"table_id", "$table.table_id"},
-			{"order_id", "$order.order_id"},
-			{"price", "$food.price"},
-			{"quantity", 1},
-		}}}
+	projectStage := bson.D{{"$project", bson.D{
+		{"id", 0},
+		{"amount", "$food.price"},
+		{"total_count", 1},
+		{"food_name", "$food.name"},
+		{"food_image", "$food.food_image"},
+		{"table_number", "$table.table_number"},
+		{"table_id", "$table.table_id"},
+		{"order_id", "$order.order_id"},
+		{"price", "$food.price"},
+		{"quantity", 1},
+	}}}
 
 	groupStage := bson.D{{"$group", bson.D{{"_id", bson.D{{"order_id", "$order_id"}, {"table_id", "$table_id"}, {"table_number", "$table_number"}}}, {"payment_due", bson.D{{"$sum", "$amount"}}}, {"total_count", bson.D{{"$sum", 1}}}, {"order_items", bson.D{{"$push", "$$ROOT"}}}}}}
 
-	projectStage2 := bson.D{
-		{"$project", bson.D{
-
-			{"id", 0},
-			{"payment_due", 1},
-			{"total_count", 1},
-			{"table_number", "$_id.table_number"},
-			{"order_items", 1},
-		}}}
+	projectStage2 := bson.D{{"$project", bson.D{
+		{"id", 0},
+		{"payment_due", 1},
+		{"total_count", 1},
+		{"table_number", "$_id.table_number"},
+		{"order_items", 1},
+	}}}
 
 	result, err := orderItemCollection.Aggregate(ctx, mongo.Pipeline{
 		matchStage,
@@ -108,132 +100,99 @@ func ItemsByOrder(id string) (OrderItems []primitive.M, err error) {
 		projectStage2})
 
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
-	if err = result.All(ctx, &OrderItems); err != nil {
-		panic(err)
-	}
+	err = result.All(ctx, &OrderItems)
+	return OrderItems, err
+}
 
+func GetOrderItem(c *fiber.Ctx) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
 	defer cancel()
 
-	return OrderItems, err
+	orderItemId := c.Params("order_item_id")
+	var orderItem models.OrderItem
 
+	err := orderItemCollection.FindOne(ctx, bson.M{"order_item_id": orderItemId}).Decode(&orderItem)
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": "error occurred while listing ordered item"})
+	}
+	return c.JSON(orderItem)
 }
 
-func GetOrderItem() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		var ctx, cancel = context.WithTimeout(context.Background(), 100*time.Second)
+func UpdateOrderItem(c *fiber.Ctx) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
+	defer cancel()
 
-		orderItemId := c.Param("order_item_id")
-		var orderItem models.OrderItem
+	orderItemId := c.Params("order_item_id")
+	var orderItem models.OrderItem
 
-		err := orderItemCollection.FindOne(ctx, bson.M{"orderItem_id": orderItemId}).Decode(&orderItem)
-		defer cancel()
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "error occured while listing ordered item"})
-			return
-		}
-		c.JSON(http.StatusOK, orderItem)
+	if err := c.BodyParser(&orderItem); err != nil {
+		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	}
+
+	filter := bson.M{"order_item_id": orderItemId}
+	var updateObj primitive.D
+
+	if orderItem.Unit_price != nil {
+		updateObj = append(updateObj, bson.E{"unit_price", *orderItem.Unit_price})
+	}
+	if orderItem.Quantity != nil {
+		updateObj = append(updateObj, bson.E{"quantity", *orderItem.Quantity})
+	}
+	if orderItem.Food_id != nil {
+		updateObj = append(updateObj, bson.E{"food_id", *orderItem.Food_id})
+	}
+
+	orderItem.Updated_at, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
+	updateObj = append(updateObj, bson.E{"updated_at", orderItem.Updated_at})
+
+	upsert := true
+	opt := options.UpdateOptions{Upsert: &upsert}
+
+	result, err := orderItemCollection.UpdateOne(ctx, filter, bson.D{{"$set", updateObj}}, &opt)
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": "Order item update failed"})
+	}
+	return c.JSON(result)
 }
 
-func UpdateOrderItem() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		var ctx, cancel = context.WithTimeout(context.Background(), 100*time.Second)
+func CreateOrderItem(c *fiber.Ctx) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
+	defer cancel()
 
-		var orderItem models.OrderItem
+	var orderItemPack OrderItemPack
+	var order models.Order
 
-		orderItemId := c.Param("order_item_id")
-
-		filter := bson.M{"order_item_id": orderItemId}
-
-		var updateObj primitive.D
-
-		if orderItem.Unit_price != nil {
-			updateObj = append(updateObj, bson.E{"unit_price", *&orderItem.Unit_price})
-		}
-
-		if orderItem.Quantity != nil {
-			updateObj = append(updateObj, bson.E{"quantity", *orderItem.Quantity})
-		}
-
-		if orderItem.Food_id != nil {
-			updateObj = append(updateObj, bson.E{"food_id", *orderItem.Food_id})
-		}
-
-		orderItem.Updated_at, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
-		updateObj = append(updateObj, bson.E{"updated_at", orderItem.Updated_at})
-
-		upsert := true
-		opt := options.UpdateOptions{
-			Upsert: &upsert,
-		}
-
-		result, err := orderItemCollection.UpdateOne(
-			ctx,
-			filter,
-			bson.D{
-				{"$set", updateObj},
-			},
-			&opt,
-		)
-
-		if err != nil {
-			msg := "Order item update failed"
-			c.JSON(http.StatusInternalServerError, gin.H{"error": msg})
-			return
-		}
-
-		defer cancel()
-
-		c.JSON(http.StatusOK, result)
+	if err := c.BodyParser(&orderItemPack); err != nil {
+		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	}
-}
 
-func CreateOrderItem() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		var ctx, cancel = context.WithTimeout(context.Background(), 100*time.Second)
+	order.Order_Date, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
+	order.Table_id = orderItemPack.Table_id
+	order_id := OrderItemOrderCreator(order)
 
-		var orderItemPack OrderItemPack
-		var order models.Order
+	orderItemsToBeInserted := []interface{}{}
 
-		if err := c.BindJSON(&orderItemPack); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
+	for _, orderItem := range orderItemPack.Order_items {
+		orderItem.Order_id = order_id
+		if err := validate.Struct(orderItem); err != nil {
+			return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 		}
-
-		order.Order_Date, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
-
-		orderItemsToBeInserted := []interface{}{}
-		order.Table_id = orderItemPack.Table_id
-		order_id := OrderItemOrderCreator(order)
-
-		for _, orderItem := range orderItemPack.Order_items {
-			orderItem.Order_id = order_id
-
-			validationErr := validate.Struct(orderItem)
-
-			if validationErr != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": validationErr.Error()})
-				return
-			}
-			orderItem.ID = primitive.NewObjectID()
-			orderItem.Created_at, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
-			orderItem.Updated_at, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
-			orderItem.Order_item_id = orderItem.ID.Hex()
-			var num = toFixed(*orderItem.Unit_price, 2)
-			orderItem.Unit_price = &num
-			orderItemsToBeInserted = append(orderItemsToBeInserted, orderItem)
-		}
-
-		insertedOrderItems, err := orderItemCollection.InsertMany(ctx, orderItemsToBeInserted)
-
-		if err != nil {
-			log.Fatal(err)
-		}
-		defer cancel()
-
-		c.JSON(http.StatusOK, insertedOrderItems)
+		orderItem.ID = primitive.NewObjectID()
+		orderItem.Created_at = time.Now()
+		orderItem.Updated_at = time.Now()
+		orderItem.Order_item_id = orderItem.ID.Hex()
+		num := toFixed(*orderItem.Unit_price, 2)
+		orderItem.Unit_price = &num
+		orderItemsToBeInserted = append(orderItemsToBeInserted, orderItem)
 	}
+
+	insertedOrderItems, err := orderItemCollection.InsertMany(ctx, orderItemsToBeInserted)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	return c.JSON(insertedOrderItems)
 }

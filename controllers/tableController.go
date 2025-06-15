@@ -2,14 +2,13 @@ package controller
 
 import (
 	"context"
-	"fmt"
+	//"fmt"
 	"golang-restaurant-management/database"
 	"golang-restaurant-management/models"
-	"log"
 	"net/http"
 	"time"
 
-	"github.com/gin-gonic/gin"
+	"github.com/gofiber/fiber/v2"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -18,124 +17,86 @@ import (
 
 var tableCollection *mongo.Collection = database.OpenCollection(database.Client, "table")
 
-func GetTables() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		var ctx, cancel = context.WithTimeout(context.Background(), 100*time.Second)
+func GetTables(c *fiber.Ctx) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
+	defer cancel()
 
-		result, err := orderCollection.Find(context.TODO(), bson.M{})
-		defer cancel()
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "error occured while listing table items"})
-		}
-		var allTables []bson.M
-		if err = result.All(ctx, &allTables); err != nil {
-			log.Fatal(err)
-		}
-		c.JSON(http.StatusOK, allTables)
+	result, err := tableCollection.Find(ctx, bson.M{})
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": "error occurred while listing tables"})
 	}
+
+	var allTables []bson.M
+	if err := result.All(ctx, &allTables); err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(allTables)
 }
 
-func GetTable() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		var ctx, cancel = context.WithTimeout(context.Background(), 100*time.Second)
-		tableId := c.Param("table_id")
-		var table models.Table
+func GetTable(c *fiber.Ctx) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
+	defer cancel()
 
-		err := tableCollection.FindOne(ctx, bson.M{"table_id": tableId}).Decode(&table)
-		defer cancel()
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "error occured while fetching the tables"})
-		}
-		c.JSON(http.StatusOK, table)
+	tableId := c.Params("table_id")
+	var table models.Table
+
+	err := tableCollection.FindOne(ctx, bson.M{"table_id": tableId}).Decode(&table)
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": "error occurred while fetching the table"})
 	}
+	return c.JSON(table)
 }
 
-func CreateTable() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		var ctx, cancel = context.WithTimeout(context.Background(), 100*time.Second)
+func CreateTable(c *fiber.Ctx) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
+	defer cancel()
 
-		var table models.Table
-
-		if err := c.BindJSON(&table); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-
-		validationErr := validate.Struct(table)
-
-		if validationErr != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": validationErr.Error()})
-			return
-		}
-
-		table.Created_at, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
-		table.Updated_at, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
-
-		table.ID = primitive.NewObjectID()
-		table.Table_id = table.ID.Hex()
-
-		result, insertErr := tableCollection.InsertOne(ctx, table)
-
-		if insertErr != nil {
-			msg := fmt.Sprintf("Table item was not created")
-			c.JSON(http.StatusInternalServerError, gin.H{"error": msg})
-			return
-		}
-		defer cancel()
-
-		c.JSON(http.StatusOK, result)
-
+	var table models.Table
+	if err := c.BodyParser(&table); err != nil {
+		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	}
+
+	if err := validate.Struct(table); err != nil {
+		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	table.ID = primitive.NewObjectID()
+	table.Table_id = table.ID.Hex()
+	now := time.Now().UTC()
+	table.Created_at = now
+	table.Updated_at = now
+
+	result, err := tableCollection.InsertOne(ctx, table)
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": "table item was not created"})
+	}
+	return c.JSON(result)
 }
 
-func UpdateTable() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		var ctx, cancel = context.WithTimeout(context.Background(), 100*time.Second)
+func UpdateTable(c *fiber.Ctx) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
+	defer cancel()
 
-		var table models.Table
-
-		tableId := c.Param("table_id")
-
-		if err := c.BindJSON(&table); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-
-		var updateObj primitive.D
-
-		if table.Number_of_guests != nil {
-			updateObj = append(updateObj, bson.E{"number_of_guests", table.Number_of_guests})
-		}
-
-		if table.Table_number != nil {
-			updateObj = append(updateObj, bson.E{"table_number", table.Table_number})
-		}
-
-		table.Updated_at, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
-
-		upsert := true
-		opt := options.UpdateOptions{
-			Upsert: &upsert,
-		}
-
-		filter := bson.M{"table_id": tableId}
-
-		result, err := tableCollection.UpdateOne(
-			ctx,
-			filter,
-			bson.D{
-				{"$set", updateObj},
-			},
-			&opt,
-		)
-
-		if err != nil {
-			msg := fmt.Sprintf("table item update failed")
-			c.JSON(http.StatusInternalServerError, gin.H{"error": msg})
-			return
-		}
-
-		defer cancel()
-		c.JSON(http.StatusOK, result)
+	tableId := c.Params("table_id")
+	var table models.Table
+	if err := c.BodyParser(&table); err != nil {
+		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	}
+
+	var updateObj primitive.D
+	if table.Number_of_guests != nil {
+		updateObj = append(updateObj, bson.E{"number_of_guests", table.Number_of_guests})
+	}
+	if table.Table_number != nil {
+		updateObj = append(updateObj, bson.E{"table_number", table.Table_number})
+	}
+	table.Updated_at = time.Now().UTC()
+	updateObj = append(updateObj, bson.E{"updated_at", table.Updated_at})
+
+	opts := options.Update().SetUpsert(true)
+	result, err := tableCollection.UpdateOne(ctx, bson.M{"table_id": tableId}, bson.D{{"$set", updateObj}}, opts)
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": "table update failed"})
+	}
+	return c.JSON(result)
 }
