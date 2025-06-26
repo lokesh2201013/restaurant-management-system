@@ -2,7 +2,6 @@ package controller
 
 import (
 	"context"
-	//"fmt"
 	"log"
 	"net/http"
 	"time"
@@ -54,37 +53,70 @@ func ItemsByOrder(id string) (OrderItems []primitive.M, err error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
 	defer cancel()
 
-	matchStage := bson.D{{"$match", bson.D{{"order_id", id}}}}
-	lookupStage := bson.D{{"$lookup", bson.D{{"from", "food"}, {"localField", "food_id"}, {"foreignField", "food_id"}, {"as", "food"}}}}
-	unwindStage := bson.D{{"$unwind", bson.D{{"path", "$food"}, {"preserveNullAndEmptyArrays", true}}}}
-
-	lookupOrderStage := bson.D{{"$lookup", bson.D{{"from", "order"}, {"localField", "order_id"}, {"foreignField", "order_id"}, {"as", "order"}}}}
-	unwindOrderStage := bson.D{{"$unwind", bson.D{{"path", "$order"}, {"preserveNullAndEmptyArrays", true}}}}
-
-	lookupTableStage := bson.D{{"$lookup", bson.D{{"from", "table"}, {"localField", "order.table_id"}, {"foreignField", "table_id"}, {"as", "table"}}}}
-	unwindTableStage := bson.D{{"$unwind", bson.D{{"path", "$table"}, {"preserveNullAndEmptyArrays", true}}}}
-
-	projectStage := bson.D{{"$project", bson.D{
-		{"id", 0},
-		{"amount", "$food.price"},
-		{"total_count", 1},
-		{"food_name", "$food.name"},
-		{"food_image", "$food.food_image"},
-		{"table_number", "$table.table_number"},
-		{"table_id", "$table.table_id"},
-		{"order_id", "$order.order_id"},
-		{"price", "$food.price"},
-		{"quantity", 1},
+	matchStage := bson.D{{Key: "$match", Value: bson.D{{Key: "order_id", Value: id}}}}
+	lookupStage := bson.D{{Key: "$lookup", Value: bson.D{
+		{Key: "from", Value: "food"},
+		{Key: "localField", Value: "food_id"},
+		{Key: "foreignField", Value: "food_id"},
+		{Key: "as", Value: "food"},
+	}}}
+	unwindStage := bson.D{{Key: "$unwind", Value: bson.D{
+		{Key: "path", Value: "$food"},
+		{Key: "preserveNullAndEmptyArrays", Value: true},
 	}}}
 
-	groupStage := bson.D{{"$group", bson.D{{"_id", bson.D{{"order_id", "$order_id"}, {"table_id", "$table_id"}, {"table_number", "$table_number"}}}, {"payment_due", bson.D{{"$sum", "$amount"}}}, {"total_count", bson.D{{"$sum", 1}}}, {"order_items", bson.D{{"$push", "$$ROOT"}}}}}}
+	lookupOrderStage := bson.D{{Key: "$lookup", Value: bson.D{
+		{Key: "from", Value: "order"},
+		{Key: "localField", Value: "order_id"},
+		{Key: "foreignField", Value: "order_id"},
+		{Key: "as", Value: "order"},
+	}}}
+	unwindOrderStage := bson.D{{Key: "$unwind", Value: bson.D{
+		{Key: "path", Value: "$order"},
+		{Key: "preserveNullAndEmptyArrays", Value: true},
+	}}}
 
-	projectStage2 := bson.D{{"$project", bson.D{
-		{"id", 0},
-		{"payment_due", 1},
-		{"total_count", 1},
-		{"table_number", "$_id.table_number"},
-		{"order_items", 1},
+	lookupTableStage := bson.D{{Key: "$lookup", Value: bson.D{
+		{Key: "from", Value: "table"},
+		{Key: "localField", Value: "order.table_id"},
+		{Key: "foreignField", Value: "table_id"},
+		{Key: "as", Value: "table"},
+	}}}
+	unwindTableStage := bson.D{{Key: "$unwind", Value: bson.D{
+		{Key: "path", Value: "$table"},
+		{Key: "preserveNullAndEmptyArrays", Value: true},
+	}}}
+
+	projectStage := bson.D{{Key: "$project", Value: bson.D{
+		{Key: "id", Value: 0},
+		{Key: "amount", Value: "$food.price"},
+		{Key: "total_count", Value: 1},
+		{Key: "food_name", Value: "$food.name"},
+		{Key: "food_image", Value: "$food.food_image"},
+		{Key: "table_number", Value: "$table.table_number"},
+		{Key: "table_id", Value: "$table.table_id"},
+		{Key: "order_id", Value: "$order.order_id"},
+		{Key: "price", Value: "$food.price"},
+		{Key: "quantity", Value: 1},
+	}}}
+
+	groupStage := bson.D{{Key: "$group", Value: bson.D{
+		{Key: "_id", Value: bson.D{
+			{Key: "order_id", Value: "$order_id"},
+			{Key: "table_id", Value: "$table_id"},
+			{Key: "table_number", Value: "$table_number"},
+		}},
+		{Key: "payment_due", Value: bson.D{{Key: "$sum", Value: "$amount"}}},
+		{Key: "total_count", Value: bson.D{{Key: "$sum", Value: 1}}},
+		{Key: "order_items", Value: bson.D{{Key: "$push", Value: "$$ROOT"}}},
+	}}}
+
+	projectStage2 := bson.D{{Key: "$project", Value: bson.D{
+		{Key: "id", Value: 0},
+		{Key: "payment_due", Value: 1},
+		{Key: "total_count", Value: 1},
+		{Key: "table_number", Value: "$_id.table_number"},
+		{Key: "order_items", Value: 1},
 	}}}
 
 	result, err := orderItemCollection.Aggregate(ctx, mongo.Pipeline{
@@ -97,8 +129,8 @@ func ItemsByOrder(id string) (OrderItems []primitive.M, err error) {
 		unwindTableStage,
 		projectStage,
 		groupStage,
-		projectStage2})
-
+		projectStage2,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -136,22 +168,22 @@ func UpdateOrderItem(c *fiber.Ctx) error {
 	var updateObj primitive.D
 
 	if orderItem.Unit_price != nil {
-		updateObj = append(updateObj, bson.E{"unit_price", *orderItem.Unit_price})
+		updateObj = append(updateObj, bson.E{Key: "unit_price", Value: *orderItem.Unit_price})
 	}
 	if orderItem.Quantity != nil {
-		updateObj = append(updateObj, bson.E{"quantity", *orderItem.Quantity})
+		updateObj = append(updateObj, bson.E{Key: "quantity", Value: *orderItem.Quantity})
 	}
 	if orderItem.Food_id != nil {
-		updateObj = append(updateObj, bson.E{"food_id", *orderItem.Food_id})
+		updateObj = append(updateObj, bson.E{Key: "food_id", Value: *orderItem.Food_id})
 	}
 
-	orderItem.Updated_at, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
-	updateObj = append(updateObj, bson.E{"updated_at", orderItem.Updated_at})
+	orderItem.Updated_at = time.Now()
+	updateObj = append(updateObj, bson.E{Key: "updated_at", Value: orderItem.Updated_at})
 
 	upsert := true
 	opt := options.UpdateOptions{Upsert: &upsert}
 
-	result, err := orderItemCollection.UpdateOne(ctx, filter, bson.D{{"$set", updateObj}}, &opt)
+	result, err := orderItemCollection.UpdateOne(ctx, filter, bson.D{{Key: "$set", Value: updateObj}}, &opt)
 	if err != nil {
 		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": "Order item update failed"})
 	}
@@ -169,7 +201,7 @@ func CreateOrderItem(c *fiber.Ctx) error {
 		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	order.Order_Date, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
+	order.Order_Date = time.Now()
 	order.Table_id = orderItemPack.Table_id
 	order_id := OrderItemOrderCreator(order)
 

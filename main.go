@@ -10,6 +10,7 @@ import (
 	"golang-restaurant-management/middleware"
 	"golang-restaurant-management/routes"
 	"golang-restaurant-management/database"
+	"golang-restaurant-management/metrics" 
 )
 
 func main() {
@@ -23,6 +24,12 @@ func main() {
 	// Middleware
     app.Use(logger.New())
 	app.Use(middleware.Authentication())
+	prometheusMiddleware := fiberprometheus.New("restaurant-management")
+	prometheusMiddleware.RegisterAt(app, "/metrics")
+	app.Use(prometheusMiddleware.Middleware)
+
+	// Register custom Prometheus metrics
+	metrics.RegisterCustomMetrics()
 
 	// Register routes
 	routes.RegisterRoutes(app)

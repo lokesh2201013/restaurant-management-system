@@ -43,13 +43,27 @@ func GetFoods(c *fiber.Ctx) error {
 		}
 	}
 
-	matchStage := bson.D{{"$match", bson.D{}}}
-	groupStage := bson.D{{"$group", bson.D{{"_id", nil}, {"total_count", bson.D{{"$sum", 1}}}, {"data", bson.D{{"$push", "$$ROOT"}}}}}}
-	projectStage := bson.D{{"$project", bson.D{
-		{"_id", 0},
-		{"total_count", 1},
-		{"food_items", bson.D{{"$slice", []interface{}{"$data", startIndex, recordPerPage}}}},
-	}}}
+	matchStage := bson.D{
+    {Key: "$match", Value: bson.D{}},
+}
+
+groupStage := bson.D{
+    {Key: "$group", Value: bson.D{
+        {Key: "_id", Value: nil},
+        {Key: "total_count", Value: bson.D{{Key: "$sum", Value: 1}}},
+        {Key: "data", Value: bson.D{{Key: "$push", Value: "$$ROOT"}}},
+    }},
+}
+
+projectStage := bson.D{
+    {Key: "$project", Value: bson.D{
+        {Key: "_id", Value: 0},
+        {Key: "total_count", Value: 1},
+        {Key: "food_items", Value: bson.D{
+            {Key: "$slice", Value: []interface{}{"$data", startIndex, recordPerPage}},
+        }},
+    }},
+}
 
 	result, err := foodCollection.Aggregate(ctx, mongo.Pipeline{matchStage, groupStage, projectStage})
 	if err != nil {
