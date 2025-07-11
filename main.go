@@ -5,12 +5,13 @@ import (
 	"os"
 
 	"github.com/gofiber/fiber/v2"
-    "github.com/gofiber/fiber/v2/middleware/logger"
-	//"golang-restaurant-management/database"
+	"github.com/gofiber/fiber/v2/middleware/logger"
+
+	"golang-restaurant-management/database"
 	"golang-restaurant-management/middleware"
 	"golang-restaurant-management/routes"
-	"golang-restaurant-management/database"
-	"golang-restaurant-management/metrics" 
+	"golang-restaurant-management/metrics"
+	"golang-restaurant-management/controllers"
 )
 
 func main() {
@@ -20,20 +21,21 @@ func main() {
 	}
 
 	app := fiber.New()
-    database.DBinstance()
-	// Middleware
-    app.Use(logger.New())
-	app.Use(middleware.Authentication())
-	prometheusMiddleware := fiberprometheus.New("restaurant-management")
-	prometheusMiddleware.RegisterAt(app, "/metrics")
-	app.Use(prometheusMiddleware.Middleware)
+	database.DBinstance()
+
+	app.Use(logger.New())
+
+	// Public routes (no auth)
+	public := app.Group("/users")
+	public.Post("/signup", controller.SignUp)
+	public.Post("/login", controller.Login)
 
 	// Register custom Prometheus metrics
 	metrics.RegisterCustomMetrics()
 
-	// Register routes
-	routes.RegisterRoutes(app)
+	// Protected routes (require JWT)
+	protected := app.Group("/", middleware.Authentication())
+	routes.RegisterRoutes(protected)
 
-	// Start server
 	log.Fatal(app.Listen(":" + port))
 }

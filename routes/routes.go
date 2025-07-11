@@ -2,50 +2,55 @@ package routes
 
 import (
 	"github.com/gofiber/fiber/v2"
-	controller "golang-restaurant-management/controllers"
+	"golang-restaurant-management/controllers"
 )
 
-func RegisterRoutes(app *fiber.App) {
+func RegisterRoutes(router fiber.Router) {
 	// User routes
-	app.Get("/users", controller.GetUsers)
-	app.Get("/users/:user_id", controller.GetUser)
-	app.Post("/users/signup", controller.SignUp)
-	app.Post("/users/login", controller.Login)
+	user := router.Group("/users")
+	user.Get("/", controller.GetUsers)
+	user.Get("/:user_id", controller.GetUser)
 
 	// Food routes
-	app.Get("/foods", controller.GetFoods)
-	app.Get("/foods/:food_id", controller.GetFood)
-	app.Post("/foods", controller.CreateFood)
-	app.Patch("/foods/:food_id", controller.UpdateFood)
+	food := router.Group("/foods")
+	food.Get("/", controller.GetFoods)
+	food.Get("/:food_id", controller.GetFood)
+	food.Post("/", controller.CreateFood)
+	food.Patch("/:food_id", controller.UpdateFood)
 
 	// Menu routes
-	app.Get("/menus", controller.GetMenus)
-	app.Get("/menus/:menu_id", controller.GetMenu)
-	app.Post("/menus", controller.CreateMenu)
-	app.Patch("/menus/:menu_id", controller.UpdateMenu)
+	menu := router.Group("/menus")
+	menu.Get("/", controller.GetMenus)
+	menu.Get("/:menu_id", controller.GetMenu)
+	menu.Post("/", controller.CreateMenu)
+	menu.Patch("/:menu_id", controller.UpdateMenu)
 
 	// Table routes
-	app.Get("/tables", controller.GetTables)
-	app.Get("/tables/:table_id", controller.GetTable)
-	app.Post("/tables", controller.CreateTable)
-	app.Patch("/tables/:table_id", controller.UpdateTable)
+	table := router.Group("/tables")
+	table.Get("/", controller.GetTables)
+	table.Get("/:table_id", controller.GetTable)
+	table.Post("/", controller.CreateTable)
+	table.Patch("/:table_id", controller.UpdateTable)
 
 	// Order routes
-	app.Get("/orders", controller.GetOrders)
-	app.Get("/orders/:order_id", controller.GetOrder)
-	app.Post("/orders", controller.CreateOrder)
-	app.Patch("/orders/:order_id", controller.UpdateOrder)
+	order := router.Group("/orders")
+	order.Get("/", controller.GetOrders)
+	order.Get("/:order_id", controller.GetOrder)
+	order.Post("/", controller.CreateOrder)
+	order.Patch("/:order_id", controller.UpdateOrder)
 
 	// OrderItem routes
-	app.Get("/orderItems", controller.GetOrderItems)
-	app.Get("/orderItems/:orderItem_id", controller.GetOrderItem)
-	app.Get("/orderItems-order/:order_id", controller.GetOrderItemsByOrder)
-	app.Post("/orderItems", controller.CreateOrderItem)
-	app.Patch("/orderItems/:orderItem_id", controller.UpdateOrderItem)
+	orderItem := router.Group("/orderItems")
+	orderItem.Get("/", controller.GetOrderItems)
+	orderItem.Get("/:orderItem_id", controller.GetOrderItem)
+	orderItem.Get("-order/:order_id", controller.GetOrderItemsByOrder)
+	orderItem.Post("/", controller.CreateOrderItem)
+	orderItem.Patch("/:orderItem_id", controller.UpdateOrderItem)
 
 	// Invoice routes
-	app.Get("/invoices", controller.GetInvoices)
-	app.Get("/invoices/:invoice_id", controller.GetInvoice)
-	app.Post("/invoices", controller.CreateInvoice)
-	app.Patch("/invoices/:invoice_id", controller.UpdateInvoice)
+	invoice := router.Group("/invoices")
+	invoice.Get("/", controller.GetInvoices)
+	invoice.Get("/:invoice_id", controller.GetInvoice)
+	invoice.Post("/", controller.CreateInvoice)
+	invoice.Patch("/:invoice_id", controller.UpdateInvoice)
 }

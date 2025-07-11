@@ -3,9 +3,6 @@ package controller
 import (
 	"context"
 	//"fmt"
-	"golang-restaurant-management/database"
-	helper "golang-restaurant-management/helpers"
-	"golang-restaurant-management/models"
 	"log"
 	"strconv"
 	"time"
@@ -15,6 +12,9 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"golang.org/x/crypto/bcrypt"
+	"golang-restaurant-management/database"
+	 "golang-restaurant-management/helpers"
+	"golang-restaurant-management/models"
 )
 
 var userCollection *mongo.Collection = database.OpenCollection(database.Client, "user")
@@ -95,24 +95,23 @@ func SignUp(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Phone already exists"})
 	}
 
+	token, refreshToken, _ := helper.GenerateAllTokens(*user.Email, *user.First_name, *user.Last_name, user.User_id)
+	
 	hashedPassword := HashPassword(*user.Password)
 	user.Password = &hashedPassword
-
 	user.Created_at = time.Now()
 	user.Updated_at = time.Now()
 	user.ID = primitive.NewObjectID()
 	user.User_id = user.ID.Hex()
-
-	token, refreshToken, _ := helper.GenerateAllTokens(*user.Email, *user.First_name, *user.Last_name, user.User_id)
 	user.Token = &token
 	user.Refresh_Token = &refreshToken
 
-	result, err := userCollection.InsertOne(ctx, user)
+	_, err = userCollection.InsertOne(ctx, user)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "User could not be created"})
 	}
 
-	return c.Status(fiber.StatusOK).JSON(result)
+	return c.Status(fiber.StatusOK).JSON("User exisits")
 }
 
 func Login(c *fiber.Ctx) error {

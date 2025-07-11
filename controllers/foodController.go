@@ -169,7 +169,7 @@ func UpdateFood(c *fiber.Ctx) error {
 	upsert := true
 	filter := bson.M{"food_id": foodId}
 	opt := options.UpdateOptions{
-		Upsert: &upsert,
+		Upsert: &upsert,g
 	}
 
 	result, err := foodCollection.UpdateOne(
